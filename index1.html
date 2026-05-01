@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MPS 멘탈 리포트</title>
+
+    <!-- 폰트 적용 (Pretendard) -->
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; }
+    </style>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Import Map: React 및 외부 라이브러리 ESM 로드 -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "recharts": "https://esm.sh/recharts@2.12.0?deps=react@18.2.0,react-dom@18.2.0",
+        "lucide-react": "https://esm.sh/lucide-react@0.359.0?deps=react@18.2.0",
+        "framer-motion": "https://esm.sh/framer-motion@11.0.8?deps=react@18.2.0,react-dom@18.2.0"
+      }
+    }
+    </script>
+
+    <!-- Babel (JSX 변환용) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-white">
+    <!-- React 앱이 마운트될 루트 요소 -->
+    <div id="root"></div>
+
+    <!-- React 컴포넌트 코드 -->
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo, useEffect, memo } from 'react';
+        import { createRoot } from 'react-dom/client';
+        import { 
+          ResponsiveContainer, Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis
+        } from 'recharts';
+        import { 
+          User, ClipboardCheck, ChevronRight, AlertCircle, 
+          Target, Zap, Shield, BookOpen, Users, RefreshCw, Activity, 
+          TrendingUp, Lock, Info, Heart,
+          MinusCircle, Circle, CheckCircle, Smile, Flame, XCircle
+        } from 'lucide-react';
+        import { motion, AnimatePresence } from 'framer-motion';
+
+        // --- Constants & Data Structures ---
+
+        const PCDEQ_MAPPING = {
+          1: { name: "경기 긴장 관리", items: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16], reverse: true },
+          2: { name: "주변 지원 환경", items: [17,18,22,25,12], reverse: true },
+          3: { name: "경기 준비 능력", items: [26,27,28,29,30,31,32,33,34,35,36,37,38], reverse: false },
+          4: { name: "실수 후 회복력", items: [39,40,41,42,43,44,45], reverse: true },
+          5: { name: "집중 자기조절력", items: [46,47,48,49,50,51], reverse: true }
+        };
+
+        const EXTRA_INDICES = [
+          { id: 'stability', name: '경기 안정성 지수', items: [5, 8, 9, 11, 15, 16], reverse: true, icon: <Shield size={18}/> },
+          { id: 'psychology', name: '심리 안정성 지수', items: [2, 3, 4, 7, 23], reverse: true, icon: <Activity size={18}/> },
+          { id: 'independence', name: '평가 독립성 지수', items: [24, 40, 42, 43, 44, 45], reverse: true, icon: <User size={18}/> },
+          { id: 'srl', name: '자기조절 학습 지수', items: [28, 29, 31, 33, 34, 38], reverse: false, icon: <BookOpen size={18}/> },
+          { id: 'imagery', name: '심상 훈련 활용 지수', items: [26, 27, 30, 32, 35, 36, 37], reverse: false, icon: <Zap size={18}/> },
+          { id: 'social', name: '주위 적응력 지수', items: [17, 18, 22, 25, 12], reverse: true, icon: <Users size={18}/> },
+          { id: 'resilience', name: '실패 회복력 지수', items: [6, 8, 11, 13, 14, 15], reverse: true, icon: <RefreshCw size={18}/> },
+          { id: 'attitude', name: '훈련 태도 지수', items: [19, 20, 21], reverse: true, icon: <Target size={18}/> },
+        ];
+
+        const SURVEY_OPTIONS = [
+          { value: 1, label: "전혀 그렇지 않다", icon: <XCircle size={22} /> },
+          { value: 2, label: "그렇지 않다", icon: <MinusCircle size={22} /> },
+          { value: 3, label: "약간 그렇지 않다", icon: <Circle size={22} /> },
+          { value: 4, label: "약간 그렇다", icon: <CheckCircle size={22} /> },
+          { value: 5, label: "그렇다", icon: <Smile size={22} /> },
+          { value: 6, label: "매우 그렇다", icon: <Flame size={22} /> }
+        ];
+
+        const QUESTIONS = [
+          "오늘 연습을 망치면, 미래에 내 꿈을 이루지 못할 것 같아서 불안해요.",
+          "자려고 누웠을 때, 걱정거리가 자꾸 떠올라서 잠을 설칠 때가 많아요.",
+          "공부나 친구 관계처럼 매일 생기는 문제들 때문에 기분이 안 좋을 때가 종종 있어요.",
+          "걱정거리 때문에 자다가 자꾸 깨거나 잠들기가 힘들어요.",
+          "작은 실수 하나만 해도, 정신이 없어서 경기에 집중 힘들어요.",
+          "내가 열심히 해도 결과가 마음대로 안 나오면, 너무 답답하고 화가 나요.",
+          "나한테 안 좋은 일이 생길까 봐 자꾸 걱정 돼요.",
+          "경기 중에 실수한 게 자꾸 생각나서, 경기에 집중하기 힘들 때가 종종 있어요.",
+          "몸이 긴장되면, 경기를 하는 동안 그 기분에서 벗어나기가 너무 힘들어요.",
+          "내 모든 시간을 축구에만 쏟지 않으면, 운동을 잘 못 하게 될 것 같아요.",
+          "경기가 한번 꼬이기 시작하면, 그 다음부터 어떻게 해야 할지 모르겠어요.",
+          "나는 속상한 일이 생겼을 때, 누군가에게 털어놓는 게 잘 안돼요.",
+          "나는 갑자기 생각지도 못한 일이 생기면, 바로 적응하기가 너무 힘들어요.",
+          "나는 힘든 일이 생겼을 때, 다시 할 수 있다고 내 마음을 달래는 게 너무 어려워요.",
+          "나는 실수를 한 번 하면 그 생각만 나고, 경기 전체를 보는 게 힘들어져요.",
+          "나는 평소에도 긴장을 하거나 떨릴 때가 많아요.",
+          "누구에게 도와달라고 부탁하는 건, 내가 약하기 때문이라고 생각해요.",
+          "나는 고민이 생겨도, 마음 편히 도와달라고 말할 사람이 없어요.",
+          "나는 약속이나 훈련 시간을 자주 깜빡해요.",
+          "나는 팀 친구들에 비해 힘든 훈련을 끝까지 못 해낼 때가 많아요.",
+          "나는 스스로 '열심히 해야지!' 하는 마음을 갖기가 너무 힘들어요.",
+          "나는 이제 팀 친구들과 같이 어울려 노는 게 별로 즐겁지 않아요.",
+          "나는 이유 없이 갑자기 기분이 안 좋아질 때가 있어요.",
+          "연습이나 시합을 망치면, 소중한 사람들이 나에게 종종 실망해요.",
+          "나는 다른 사람에게 도와달라고 하거나 물어보는 게 싫어요.",
+          "나는 기술을 배우거나 경기를 준비할 때 머릿속으로 이미지를 그려봐요.",
+          "나는 시합에서 더 잘하기 위해 머릿속으로 상상을 해요.",
+          "나는 뛰어난 선수가 되기 위해 잘 세운 목표가 있어요.",
+          "나는 실패했을 때 어떻게 할지 미리 생각해 봐요.",
+          "나는 내가 멋지게 경기하는 모습을 머릿속으로 자주 그려봐요.",
+          "나는 내가 이루고 싶은 목표를 어떻게 성공시킬지 자주 계획해봐요.",
+          "나는 몸으로 해보기 전에, 머릿속으로 먼저 연습해 보는 걸 좋아해요.",
+          "나는 연습한 내용을 머릿속으로 떠올리며, 어떤 부분을 조심해야 할지 미리 생각해요.",
+          "나는 코치님이 시킨 게 뭔지 정확히 알 때까지 충분히 생각해요.",
+          "나는 내가 할 플레이를 머릿속으로 몇 번이고 계속 반복해서 그려봐요.",
+          "나는 운동을 시작하기 전에, 내가 할 동작을 머릿속으로 먼저 그려봐요.",
+          "나는 훈련할 때 몸만 움직이지 않고, 머리 속으로도 내 동작을 계속 그려봐요.",
+          "나는 경기장에 가기 전, 내가 오늘 해야 할 일들을 머릿속으로 한번 더 확인해요.",
+          "나는 음식을 먹은 후 살이 쪄서 몸이 변할까 봐 걱정되거나, 마음이 불편한 적이 있어요.",
+          "나는 축구를 잘 못하게 되면, 사람들이 나에게 실망해서 떠나갈 것 같다는 생각이 들어요.",
+          "나는 내 몸이 무거워져서 축구를 잘 못하게 될까 봐 걱정되요.",
+          "나는 축구가 잘 안되면, 코치님이나 부모님이 나를 부족한 선수라고 생각하실까 봐 무서워요.",
+          "내가 축구가 잘 안되었을 때, 실제로 주변의 관심이 줄어들어요.",
+          "내가 실수했을 때 사람들이 나를 실망스럽게 쳐다볼까 봐 매번 걱정이 돼요.",
+          "연습이나 시합을 망치고 나면, '나는 영영 멋진 축구선수가 될 수 없을까 봐' 겁이 나요.",
+          "나는 다른 더 좋은 방법이 있는지 생각하지 않고, 그냥 하던 대로 바로 할 때가 많아요.",
+          "나는 경기가 잘안풀리면, 친구들이나 주변 상황을 먼저 탓할 때가 많아요.",
+          "나는 경기중에 갑자기 생각지도 못한 일이 생기면, 어떻게 해야 할지 몰라서 힘들어요.",
+          "나는 하면 안 된다는 걸 알면서도, 나도 모르게 그냥 해버릴 때가 자주 있어요.",
+          "나한테 안 좋다는 걸 알지만, 내가 하고 싶어서 그냥 해버릴 때가 있어요.",
+          "나는 나쁜 습관을 고치는 게 너무 힘들어요."
+        ];
+
+        const STAGE_CONFIG = {
+          STRONG: { label: "강점", color: "#4F46E5", min: 5.0 },
+          GOOD: { label: "양호", color: "#10B981", min: 4.3 },
+          NORMAL: { label: "보통", color: "#F59E0B", min: 3.6 },
+          WARNING: { label: "주의", color: "#EF4444", min: 3.0 },
+          IMPROVE: { label: "강화하면 좋음", color: "#6B7280", min: 0.0 }
+        };
+
+        const getStage = (score) => {
+          if (score >= 5.0) return STAGE_CONFIG.STRONG;
+          if (score >= 4.3) return STAGE_CONFIG.GOOD;
+          if (score >= 3.6) return STAGE_CONFIG.NORMAL;
+          if (score >= 3.0) return STAGE_CONFIG.WARNING;
+          return STAGE_CONFIG.IMPROVE;
+        };
+
+        // --- Content Resources ---
+        const DETAIL_CONTENT = {
+          '1': { meaning: "전반적인 멘탈 준비 상태와 긴장도를 보여줍니다. 경기 압박, 집중력 등을 종합적으로 나타냅니다.", weakness: ["중요한 순간 긴장될 때", "실수가 이어질 때", "기대만큼 안 나올 때"], guide: ["나만의 경기 전 루틴 만들기", "실수 후 심호흡하며 다음 플레이 집중", "훈련 후 오늘 잘한 것 1가지 기록하기"] },
+          'mgi': { meaning: "선수가 앞으로 얼마나 멘탈적으로 성장할 잠재력이 있는지 보여주는 핵심 지표입니다.", weakness: ["목표 없이 훈련할 때", "결과와 실패에만 집착할 때", "억지로 훈련할 때"], guide: ["훈련 전 명확한 목표 정하기", "실수 속에서 개선점 찾기", "오늘 새롭게 배운 점 떠올리기"] },
+          'stability': { meaning: "경기 중 긴장이나 실수가 생겼을 때 흔들리지 않고 평정심을 유지하는 능력입니다.", weakness: ["초반에 실수했을 때", "상대가 강해 보일 때", "공을 뺏겼을 때"], guide: ["'다음 공!' 키워드 속으로 외치기", "깊게 숨 쉬기 3번", "실수 후 즉시 수비 위치로 이동하기"] },
+          'psychology': { meaning: "일상적인 걱정이나 스트레스 상황에서 마음을 가라앉히고 긍정적으로 생각하는 능력입니다.", weakness: ["걱정이 계속 남을 때", "경기 결과에 너무 신경 쓸 때", "피로가 쌓였을 때"], guide: ["자기 전 좋았던 일 1가지 생각하기", "걱정거리를 종이에 써서 버리기", "가벼운 스트레칭과 명상"] },
+          'independence': { meaning: "주변의 시선이나 평가에 흔들리지 않고 오직 내 플레이에만 몰입하는 능력입니다.", weakness: ["주변 평가가 신경 쓰일 때", "부모님/코치님 반응을 살필 때", "잘해야 한다는 부담감"], guide: ["경기 전 나만의 작은 목표에만 집중", "관중석 대신 공 움직임에만 시선 두기", "결과보다 과정 칭찬하기"] },
+          'srl': { meaning: "스스로 훈련 목표를 세우고 점검하며 실천하는 능력입니다. 성장 가능성의 핵심입니다.", weakness: ["시키는 훈련만 수동적으로 할 때", "실패한 이유를 분석하지 않을 때"], guide: ["오늘 연습할 기술 1개 스스로 선정하기", "훈련 후 개인 훈련 일지 작성 습관화"] },
+          'imagery': { meaning: "머릿속으로 플레이를 미리 그려보며 실제 상황에서 스킬 활용도를 높이는 심상 훈련 능력을 의미합니다.", weakness: ["상상하지 않고 기계적으로 반복만 할 때", "새로운 기술을 배울 때"], guide: ["성공 장면 10초 상상하기", "동작 전 미리 머릿속으로 동영상 재생해보기"] },
+          'social': { meaning: "팀 동료와 잘 소통하고 새로운 환경이나 예상치 못한 상황에 유연하게 적응하는 능력입니다.", weakness: ["팀에서 혼자라 느낄 때", "포지션이 갑자기 변경되었을 때"], guide: ["팀원에게 먼저 인사하고 격려하기", "모르는 것은 코치님께 적극적으로 질문하기"] },
+          'resilience': { meaning: "넘어지거나 실패해도 좌절하지 않고 긍정적인 마음으로 다시 일어나는 회복 탄력성입니다.", weakness: ["치명적인 실수를 했을 때", "실수에 오래 갇혀 있을 때"], guide: ["'괜찮아, 다시 할 수 있어' 혼잣말하기", "과거의 성공 경험 떠올리며 전환하기"] },
+          'attitude': { meaning: "꾸준하고 성실하게 훈련에 임하며 어려운 훈련도 포기하지 않는 끈기와 태도입니다.", weakness: ["훈련이 힘들고 지루하다 느낄 때", "집중이 금방 깨질 때"], guide: ["힘들 때 한 번 더 시도해보기", "훈련을 마친 후 성취감 느끼고 칭찬하기"] }
+        };
+
+        const COACH_CONTENT = {
+          1: {
+            "강점": { interpretation: "압박 상황에서도 멘탈이 안정적이며 플레이 유지가 가능합니다.", behavior: "압박 상황에서 볼 요구 움직임이 유지되며 실수 후 전환이 빠릅니다.", guide: "시뮬레이션 훈련에서 주도적 역할을 맡겨 경험치를 극대화하세요." },
+            "양호": { interpretation: "안정적이지만 큰 경기 등 특수 상황에서 약간의 긴장 반응이 보일 수 있습니다.", behavior: "평소엔 잘하나 결승전 등에서 속도가 조금 느려질 수 있습니다.", guide: "경기 전 루틴을 고착화시켜 안정감을 더해주면 좋습니다." },
+            "보통": { interpretation: "상황에 따라 긴장 기복이 나타날 수 있는 단계입니다.", behavior: "실수 후 리듬이 일시적으로 흔들리거나 볼 소유 시간이 길어질 수 있습니다.", guide: "실수 후 즉각적인 다음 행동(압박 등)을 미리 약속해 두세요." },
+            "주의": { interpretation: "압박이 경기력 저하로 직접 연결될 가능성이 있습니다.", behavior: "실수 후 움직임이 급격히 줄어들거나 볼 받기를 회피할 수 있습니다.", guide: "볼 터치 성공 경험을 늘려주는 단순 패스 훈련 비중을 높여주세요." },
+            "강화하면 좋음": { interpretation: "수행 불안 가능성이 높으며 심리적 지지가 필수적입니다.", behavior: "지적받은 후 플레이가 완전히 위축되거나 자신감이 결여된 모습입니다.", guide: "결과에 대한 질책보다는 시도 자체를 인정하는 긍정 피드백이 시급합니다." }
+          },
+          2: {
+            "강점": { interpretation: "주변(지도자, 부모, 팀원)과의 신뢰가 두터우며 이를 성장의 동력으로 삼습니다.", behavior: "어려움이 있을 때 적극적으로 소통하고 도움을 요청합니다.", guide: "리더십 역할을 부여하여 팀 분위기 메이커로 활용하세요." },
+            "양호": { interpretation: "원만한 대인관계를 유지하나 때로는 혼자 해결하려는 경향이 있습니다.", behavior: "대체로 팀에 잘 융화되지만 깊은 고민은 잘 나누지 않을 수 있습니다.", guide: "정기적인 1:1 면담을 통해 심리적 안전감을 제공해주세요." },
+            "보통": { interpretation: "팀 분위기나 주변의 반응에 따라 심리적 안정감이 크게 좌우될 수 있습니다.", behavior: "동료의 실수에 예민하게 반응하거나 눈치를 보는 경향이 있습니다.", guide: "팀 빌딩 활동을 통해 상호 지지적인 팀 문화를 강화하세요." },
+            "주의": { interpretation: "주변 환경에 대한 불신이나 고립감을 느낄 가능성이 있습니다.", behavior: "팀 활동에 소극적이며 독단적인 플레이를 할 때가 있습니다.", guide: "작은 역할부터 부여하여 팀 내 소속감을 느끼게 도와주세요." },
+            "강화하면 좋음": { interpretation: "심리적 고립 상태일 수 있으며 주변의 세심한 관찰과 개입이 필요합니다.", behavior: "비판에 극도로 방어적이거나 팀원과의 갈등이 잦을 수 있습니다.", guide: "지시보다는 경청하는 태도로 접근하고 부모님과의 상담도 고려하세요." }
+          },
+          3: {
+            "강점": { interpretation: "목표 설정 및 이미지 트레이닝 등 심리 기술을 훈련에 적극 활용합니다.", behavior: "훈련의 목적을 명확히 이해하고 스스로 동기를 부여하며 훈련에 임합니다.", guide: "더 높은 수준의 자율 훈련 과제를 부여하여 잠재력을 끌어올리세요." },
+            "양호": { interpretation: "기본적인 준비 능력을 갖추고 있으나 심화된 심리 기술 활용은 부족할 수 있습니다.", behavior: "주어진 훈련은 성실히 소화하지만 창의적인 문제 해결 시도는 적습니다.", guide: "다양한 시뮬레이션 환경을 제공하여 응용력을 키워주세요." },
+            "보통": { interpretation: "훈련 준비성이 다소 부족하며 외부 보상(칭찬 등)에 의존하는 경향이 있습니다.", behavior: "지시받은 내용 위주로 수동적으로 훈련에 참여하는 모습이 자주 보입니다.", guide: "훈련 전 스스로 목표 세우고 선언하게 하는 습관을 길러주세요." },
+            "주의": { interpretation: "경기 상황에 대한 인지적 준비가 미흡하여 실전에서 당황하기 쉽습니다.", behavior: "새로운 전술이나 패턴을 익히는 데 남들보다 시간이 오래 걸립니다.", guide: "복잡한 훈련보다 기본기 위주의 반복 훈련으로 자신감을 먼저 심어주세요." },
+            "강화하면 좋음": { interpretation: "훈련에 대한 목적의식이 매우 흐릿하며 동기부여가 시급한 상태입니다.", behavior: "훈련 중 자주 딴청을 피우거나 쉽게 포기하는 성향이 짙습니다.", guide: "선수가 축구를 하는 근본적인 이유와 즐거움을 찾을 수 있도록 돕는 대화가 필요합니다." }
+          },
+          4: {
+            "강점": { interpretation: "실수를 배움의 기회로 삼으며 매우 빠른 심리적 회복 탄력성을 보입니다.", behavior: "실수 직후에도 위축되지 않고 즉시 수비 전환이나 다음 플레이를 시도합니다.", guide: "실수를 두려워하지 않는 태도를 팀 앞에서 공개적으로 칭찬해주세요." },
+            "양호": { interpretation: "실수에 대한 회복이 준수하나, 치명적인 실수에는 약간의 잔상이 남습니다.", behavior: "일반적인 상황에선 무난하나, 큰 경기 실수 후에는 플레이가 조금 단순해집니다.", guide: "실수 상황을 가정한 '루틴(예: 박수 한 번 치고 잊기)'을 만들어주세요." },
+            "보통": { interpretation: "실수에 대한 두려움이 있어 플레이가 소극적으로 변할 수 있는 경계선입니다.", behavior: "실수 후 눈치를 보거나 안전한 백패스 위주의 플레이 빈도가 높아집니다.", guide: "결과 지향적 피드백보다 '좋은 시도' 자체를 격려하는 코칭을 늘려주세요." },
+            "주의": { interpretation: "실수 후 급격히 멘탈이 무너지며 경기력 전체에 악영향을 미칩니다.", behavior: "한 번의 실수 후 연속해서 실수를 범하거나 신경질적인 반응을 보입니다.", guide: "실수 직후 즉각적인 질책을 피하고, 하프타임 등 진정된 후 피드백하세요." },
+            "강화하면 좋음": { interpretation: "실패에 대한 트라우마 수준의 반응을 보일 수 있어 각별한 지도가 필요합니다.", behavior: "실수 상황을 병적으로 회피하거나 경기 출전 자체에 부담을 느낍니다.", guide: "작고 쉬운 성공 경험을 의도적으로 세팅하여 잃어버린 자신감을 회복시켜야 합니다." }
+          },
+          5: {
+            "강점": { interpretation: "외부 요인에 흔들리지 않고 스스로 감정과 집중력을 완벽히 통제합니다.", behavior: "심판 판정이나 상대의 거친 플레이에도 평정심을 잃지 않고 경기를 주도합니다.", guide: "경기 중 예기치 못한 돌발 변수를 통제하는 리더 역할을 수행하게 하세요." },
+            "양호": { interpretation: "대체로 우수한 통제력을 보이나 체력 저하 시 다소 감정적으로 변할 수 있습니다.", behavior: "경기 후반부 피로가 누적될 때 불필요한 파울이나 항의가 늘어날 수 있습니다.", guide: "체력적 한계 상황에서의 멘탈 관리법(호흡, 긍정적 자기 암시)을 지도하세요." },
+            "보통": { interpretation: "집중력의 기복이 존재하며 주변 환경에 영향을 받는 편입니다.", behavior: "경기가 잘 풀릴 때는 훌륭하나, 꼬이기 시작하면 집중력이 급격히 떨어집니다.", guide: "상황별 대처 시나리오를 미리 작성하여 불확실성에서 오는 불안을 줄여주세요." },
+            "주의": { interpretation: "감정 조절에 어려움을 겪으며 이것이 경기 중 잦은 판단 미스로 이어집니다.", behavior: "흥분 상태에서 무리한 플레이를 남발하거나 전술적 지시를 자주 잊어버립니다.", guide: "감정이 격해졌을 때 사용할 수 있는 '타임아웃(Time-out)' 신호를 약속하세요." },
+            "강화하면 좋음": { interpretation: "충동 통제력이 매우 취약하여 경기장 안팎에서 관리가 필요한 상태입니다.", behavior: "잦은 경고 수집, 팀원과의 불화 등 부정적인 감정 표출이 통제되지 않습니다.", guide: "스포츠 심리 전문가의 개입을 고려하거나 명상 등 차분해지는 훈련을 병행하세요." }
+          }
+        };
+
+        // --- Sub-components ---
+
+        const Intro = memo(({ onNext }) => (
+          <div className="flex flex-col items-center justify-center min-h-[80vh] text-center p-6 space-y-8 max-w-2xl mx-auto font-[Pretendard]">
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-4">
+              <h1 className="text-4xl font-bold text-gray-900 tracking-tight">유소년선수 스포츠멘탈 체크</h1>
+              <p className="text-gray-500 text-lg font-medium">총 51문항 / 예상 소요시간 7~10분</p>
+              <div className="bg-indigo-50 border border-indigo-100 p-5 rounded-3xl flex items-start gap-3 text-left shadow-sm">
+                <Heart className="text-indigo-500 shrink-0 mt-1" size={20}/>
+                <p className="text-sm text-indigo-900 leading-relaxed break-keep">
+                  이 테스트는 영국 프리미어리그, 네덜란드 등 유럽 또래의 엘리트 선수들이 주기적으로 수행하는 평가방식이에요. 점수에 따라 여러분의 실력을 평가하거나 성적을 매기는 것이 아니에요. <br/>
+                  <strong>여러분이 더 멋진 선수로 성장하기 위해, 지금 내 마음 상태가 어떤지 알려주는 보물지도</strong>와 같습니다. 편안하게 평소의 생각을 골라주세요!
+                </p>
+              </div>
+            </motion.div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
+              {[
+                { title: "성장 습관", desc: "훈련을 평소에 잘 준비하는지 알아봐요.", icon: <TrendingUp size={24} className="text-indigo-500"/> },
+                { title: "멘탈 기술", desc: "집중, 긴장 이완, 상상 기술을 점검해요.", icon: <Zap size={24} className="text-amber-500"/> },
+                { title: "실전 대처", desc: "압박이나 실수 상황 대처 능력을 확인해요.", icon: <RefreshCw size={24} className="text-emerald-500"/> },
+              ].map((item, i) => (
+                <div key={i} className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm flex flex-col items-center space-y-3">
+                  <div className="p-3 bg-gray-50 rounded-2xl">{item.icon}</div>
+                  <h3 className="font-bold text-gray-800">{item.title}</h3>
+                  <p className="text-sm text-gray-500 break-keep leading-snug">{item.desc}</p>
+                </div>
+              ))}
+            </div>
+            <button onClick={onNext} className="px-12 py-5 bg-indigo-600 text-white rounded-full font-bold text-lg shadow-xl hover:bg-indigo-700 transition-all flex items-center gap-2 transform hover:scale-105 active:scale-95">
+              체크 시작하기 <ChevronRight size={20}/>
+            </button>
+          </div>
+        ));
+
+        const ProfileForm = memo(({ profile, setProfile, onNext }) => (
+          <div className="max-w-md mx-auto p-8 bg-white rounded-[2.5rem] border border-gray-100 shadow-2xl mt-12 space-y-8">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-bold text-gray-900">기본 정보 입력</h2>
+              <p className="text-sm text-gray-500">여러분을 위한 맞춤 리포트를 만들게요.</p>
+            </div>
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700 ml-1">선수 이름</label>
+                <input type="text" className="w-full p-4 rounded-2xl border border-gray-200 focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-800" 
+                  value={profile.name} onChange={e => setProfile(p => ({...p, name: e.target.value}))} placeholder="이름을 입력하세요" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-700 ml-1">생년월일</label>
+                  <input type="text" className="w-full p-4 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
+                    value={profile.birth} onChange={e => setProfile(p => ({...p, birth: e.target.value}))} placeholder="YYYY.MM.DD" />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-gray-700 ml-1">성별</label>
+                  <div className="flex bg-gray-100 p-1.5 rounded-2xl">
+                    {['남', '여'].map(g => (
+                      <button key={g} onClick={() => setProfile(p => ({...p, gender: g}))}
+                        className={`flex-1 py-2.5 rounded-xl text-sm font-bold transition-all ${profile.gender === g ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-400'}`}>{g}</button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-gray-700 ml-1">차트 번호 (선택)</label>
+                <input type="text" className="w-full p-4 rounded-2xl border border-gray-200 outline-none focus:ring-2 focus:ring-indigo-500 transition-all" 
+                  value={profile.chartNo} onChange={e => setProfile(p => ({...p, chartNo: e.target.value}))} placeholder="관리 번호" />
+              </div>
+            </div>
+            <button onClick={onNext} disabled={!profile.name} className="w-full py-5 bg-gray-900 text-white rounded-3xl font-bold disabled:bg-gray-200 transition-all shadow-lg active:scale-95">
+              설문 시작하기
+            </button>
+          </div>
+        ));
+
+        const Survey = memo(({ answers, setAnswers, onSubmit }) => {
+          const answeredCount = answers.filter(a => a !== 0).length;
+          
+          return (
+            <div className="max-w-5xl mx-auto py-12 px-4 md:px-6 space-y-12 font-[Pretendard]">
+              <div className="sticky top-0 bg-white/95 backdrop-blur-md py-6 z-10 border-b border-gray-100 flex flex-col gap-5 rounded-b-3xl">
+                <div className="flex justify-between items-end px-4">
+                  <div className="space-y-1">
+                    <h2 className="text-2xl font-black text-gray-900">스포츠 멘탈 설문지</h2>
+                    <p className="text-[13px] text-indigo-500 font-bold tracking-tight">솔직하게 답변할수록 정확한 보물지도가 만들어져요! ✨</p>
+                  </div>
+                  <span className="text-sm font-black text-indigo-600 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">{answeredCount} / 51</span>
+                </div>
+                <div className="w-full h-3 bg-gray-100 rounded-full overflow-hidden shadow-inner mx-4 max-w-[calc(100%-32px)]">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${(answeredCount / 51) * 100}%` }} transition={{ type: 'spring', damping: 20 }} className="h-full bg-indigo-500" />
+                </div>
+              </div>
+
+              <div className="space-y-24 pt-8">
+                {QUESTIONS.map((q, i) => (
+                  <div key={i} className="space-y-10 group">
+                    <div className="flex gap-5 items-start px-2">
+                      <span className="text-indigo-100 group-hover:text-indigo-300 transition-colors font-black text-5xl italic leading-none">{i + 1}</span>
+                      <p className="text-xl md:text-2xl text-gray-800 font-bold break-keep leading-tight pt-2">{q}</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-6 gap-2 md:gap-4">
+                      {SURVEY_OPTIONS.map((opt) => (
+                        <button 
+                          key={opt.value} 
+                          onClick={() => {
+                            setAnswers(prev => {
+                              const next = [...prev];
+                              next[i] = opt.value;
+                              return next;
+                            });
+                          }} 
+                          className={`group flex flex-col items-center justify-center gap-3 py-6 px-1 rounded-[2rem] border-2 font-bold transition-all relative
+                            ${answers[i] === opt.value 
+                              ? 'border-indigo-600 bg-indigo-600 text-white shadow-xl scale-105 z-10' 
+                              : 'border-gray-50 bg-gray-50/30 text-gray-400 hover:border-indigo-200 hover:text-indigo-600 hover:bg-white'}`}
+                        >
+                          <div className={`transition-transform duration-300 group-hover:scale-110 ${answers[i] === opt.value ? 'scale-110 text-white' : 'text-gray-300'}`}>
+                            {opt.icon}
+                          </div>
+                          <span className={`text-[10px] md:text-[11px] lg:text-[13px] whitespace-nowrap text-center leading-none tracking-tighter transition-colors
+                            ${answers[i] === opt.value ? 'text-white' : 'text-gray-500'}`}>
+                            {opt.label}
+                          </span>
+                          {answers[i] === opt.value && (
+                            <motion.div layoutId={`active-${i}`} className="absolute inset-0 border-4 border-indigo-200 rounded-[2rem] pointer-events-none opacity-50" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="pt-32 pb-24">
+                <button onClick={onSubmit} className="w-full py-8 bg-indigo-600 text-white rounded-[2.5rem] font-black text-2xl shadow-2xl hover:bg-indigo-700 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center gap-3">
+                  모든 결과 확인하기 <TrendingUp size={28}/>
+                </button>
+              </div>
+            </div>
+          );
+        });
+
+        // --- Main App Component ---
+
+        function App() {
+          const [step, setStep] = useState('intro'); 
+          const [profile, setProfile] = useState({ name: '', birth: '', gender: '남', chartNo: '' });
+          // 테스트용이 아닌 초기 상태로 복구 (fill(0))
+          const [answers, setAnswers] = useState(Array(51).fill(0));
+          const [activeTab, setActiveTab] = useState('summary');
+          const [showCoachMode, setShowCoachMode] = useState(false);
+
+          useEffect(() => {
+            // Secret key to toggle coach mode (Press '1')
+            const handleKeyDown = (e) => { if (e.key === '1') setShowCoachMode(prev => !prev); };
+            window.addEventListener('keydown', handleKeyDown);
+            return () => window.removeEventListener('keydown', handleKeyDown);
+          }, []);
+
+          const data = useMemo(() => {
+            if (step !== 'result') return null;
+            
+            // Calculate 5 PCDEQ Scores
+            const pcdeq = Object.entries(PCDEQ_MAPPING).map(([id, config]) => {
+              const sum = config.items.reduce((acc, idx) => {
+                const raw = answers[idx - 1] || 1; // Fallback to 1 if empty
+                return acc + (config.reverse ? (7 - raw) : raw);
+              }, 0);
+              return { id, name: config.name, score: Number((sum / config.items.length).toFixed(2)) };
+            });
+            
+            const fScores = pcdeq.reduce((acc, s) => ({ ...acc, [s.id]: s.score }), {});
+            
+            // MGI Formula calculation
+            const mgi = Number(((fScores[1] * 0.25) + (fScores[4] * 0.30) + (fScores[3] * 0.25) + (fScores[5] * 0.20)).toFixed(2));
+            
+            // Extra indices calculation
+            const extra = EXTRA_INDICES.map(idx => {
+              const sum = idx.items.reduce((acc, qIdx) => {
+                const raw = answers[qIdx - 1] || 1;
+                return acc + (idx.reverse ? (7 - raw) : raw);
+              }, 0);
+              return { ...idx, score: Number((sum / idx.items.length).toFixed(2)) };
+            });
+            
+            return { pcdeq, mgi, extra };
+          }, [answers, step]);
+
+          const ScoreCard = ({ title, score }) => {
+            const stage = getStage(score);
+            return (
+              <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-sm space-y-4 hover:shadow-md transition-shadow">
+                <div className="flex justify-between items-start">
+                  <h4 className="text-gray-500 text-[13px] font-bold tracking-tight">{title}</h4>
+                  <span className="px-3 py-1 rounded-full text-[10px] font-bold border" style={{ borderColor: stage.color + '40', backgroundColor: stage.color + '10', color: stage.color }}>{stage.label}</span>
+                </div>
+                <div className="flex items-baseline gap-0.5">
+                  <span className="text-3xl font-black text-gray-900">{score.toFixed(1)}</span>
+                  <span className="text-sm font-bold text-gray-300">/6</span>
+                </div>
+                <div className="h-2.5 w-full bg-gray-100 rounded-full overflow-hidden shadow-inner">
+                  <motion.div initial={{ width: 0 }} animate={{ width: `${(score/6)*100}%` }} transition={{ duration: 1, ease: "easeOut" }} className="h-full" style={{ backgroundColor: stage.color }} />
+                </div>
+              </div>
+            );
+          };
+
+          const DetailCard = ({ dataId, itemData }) => {
+            const stage = getStage(itemData.score);
+            const config = DETAIL_CONTENT[dataId] || { meaning: '준비 중입니다.', weakness: [], guide: [] };
+            
+            return (
+              <div className="bg-white rounded-[3.5rem] border border-gray-100 overflow-hidden shadow-sm hover:shadow-md transition-all duration-300">
+                <div className="p-10 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
+                  <div className="flex items-center gap-5">
+                    <div className="p-4 bg-white rounded-2xl text-indigo-600 shadow-sm border border-gray-50">{itemData.icon || <Info size={24}/>}</div>
+                    <h3 className="font-black text-gray-900 text-xl">{itemData.name}</h3>
+                  </div>
+                  <div className="text-right">
+                    <div className="flex items-baseline gap-0.5 justify-end">
+                      <span className="text-3xl font-black text-gray-900">{itemData.score.toFixed(1)}</span>
+                      <span className="text-base font-bold text-gray-300">/6</span>
+                    </div>
+                    <div className="text-[11px] font-black tracking-widest uppercase mt-1" style={{ color: stage.color }}>{stage.label}</div>
+                  </div>
+                </div>
+                <div className="p-10 space-y-8">
+                  <div className="bg-white p-6 rounded-[2rem] border border-gray-100 shadow-inner">
+                    <h4 className="text-[11px] font-black text-indigo-500 uppercase tracking-[0.2em] mb-3">INDICATOR MEANING</h4>
+                    <p className="text-[15px] text-gray-700 font-medium leading-relaxed break-keep">{config.meaning}</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 pt-2">
+                    <div className="space-y-4 bg-red-50/30 p-8 rounded-[2.5rem] border border-red-100/30">
+                      <h4 className="text-[13px] font-black text-red-500 flex items-center gap-2"><AlertCircle size={16}/> 이럴 때 흔들려요</h4>
+                      <ul className="text-[13px] text-gray-700 space-y-2.5 list-disc pl-4 font-medium">{config.weakness?.map((w, i) => <li key={i} className="break-keep">{w}</li>)}</ul>
+                    </div>
+                    <div className="space-y-4 bg-emerald-50/30 p-8 rounded-[2.5rem] border border-emerald-100/30">
+                      <h4 className="text-[13px] font-black text-emerald-600 flex items-center gap-2"><TrendingUp size={16}/> 더 나아지는 방법</h4>
+                      <ul className="text-[13px] text-gray-700 space-y-2.5 list-disc pl-4 font-medium">{config.guide?.map((g, i) => <li key={i} className="break-keep">{g}</li>)}</ul>
+                    </div>
+                  </div>
+                  <div className="pt-8 text-center border-t border-gray-50">
+                    <p className="text-[11px] text-gray-400 font-bold italic tracking-tight opacity-80">"내 마음의 소리에 귀 기울일 때 더 큰 성장이 찾아옵니다. ⚽️"</p>
+                  </div>
+                </div>
+              </div>
+            );
+          };
+
+          return (
+            <div className="min-h-screen bg-white font-[Pretendard]">
+              <AnimatePresence mode="wait">
+                {step === 'intro' && <Intro key="intro" onNext={() => setStep('profile')} />}
+                {step === 'profile' && <ProfileForm key="profile" profile={profile} setProfile={setProfile} onNext={() => setStep('survey')} />}
+                {step === 'survey' && <Survey key="survey" answers={answers} setAnswers={setAnswers} onSubmit={() => { if (answers.includes(0)) alert("아직 답변하지 않은 문항이 있어요. 모든 문항을 확인해주세요! ✨"); else setStep('result'); }} />}
+                
+                {step === 'result' && data && (
+                  <motion.div key="result" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-[#FDFDFF] min-h-screen">
+                    <header className="bg-white border-b border-gray-100 sticky top-0 z-30 px-6 py-6 shadow-sm">
+                      <div className="max-w-6xl mx-auto flex flex-col md:flex-row gap-6 justify-between items-center">
+                        <div className="flex items-center gap-5">
+                          <div className="w-14 h-14 bg-indigo-600 rounded-[1.25rem] flex items-center justify-center text-white font-black text-2xl shadow-indigo-200 shadow-xl">{profile.name[0] || '선'}</div>
+                          <div><h1 className="font-black text-gray-900 text-xl tracking-tight">{profile.name} 선수 멘탈 리포트</h1><p className="text-[11px] text-gray-400 font-black tracking-[0.3em] uppercase mt-0.5">ID: {profile.chartNo || 'ANONYMOUS-ATHLETE'}</p></div>
+                        </div>
+                        <nav className="flex bg-gray-100 p-2 rounded-[1.5rem] shadow-inner overflow-x-auto">
+                          {['summary', 'personal', 'coach'].map(t => (t !== 'coach' || showCoachMode) && (
+                            <button key={t} onClick={() => setActiveTab(t)} className={`whitespace-nowrap px-7 py-2.5 rounded-[1.1rem] text-xs font-black transition-all duration-300 ${activeTab === t ? 'bg-white shadow-lg text-indigo-600 scale-105' : 'text-gray-400 hover:text-gray-600'}`}>
+                              {t === 'summary' ? '나의 멘탈 요약' : t === 'personal' ? '멘탈 성장 가이드' : '지도자 전용 리포트'}
+                            </button>
+                          ))}
+                        </nav>
+                      </div>
+                    </header>
+                    
+                    <main className="max-w-6xl mx-auto p-6 space-y-16 mt-8">
+                      {activeTab === 'summary' && (
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-16">
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                            <div className="lg:col-span-2 bg-white p-8 md:p-12 rounded-[3.5rem] shadow-sm h-[520px] border border-gray-100">
+                              <div className="flex flex-col md:flex-row justify-between items-start mb-4 md:mb-10 gap-4">
+                                <div className="space-y-1">
+                                  <h3 className="text-2xl font-black text-gray-900 flex items-center gap-3 tracking-tighter"><ClipboardCheck className="text-indigo-500" size={28}/> 5대 핵심 멘탈지수</h3>
+                                  <p className="text-[11px] text-indigo-400 font-black tracking-widest uppercase">Mental Performance Radar Chart</p>
+                                </div>
+                                <p className="text-[12px] text-gray-400 font-bold max-w-[200px] md:text-right break-keep leading-tight">내 마음의 강점과 앞으로 더 채워야 할 곳을 한 눈에 확인하세요.</p>
+                              </div>
+                              <div className="h-[300px] md:h-[360px] w-full">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <RadarChart cx="50%" cy="50%" outerRadius="70%" data={data.pcdeq.map(s => ({ name: s.name, score: s.score }))}>
+                                    <PolarGrid stroke="#F3F4F6" strokeWidth={2} />
+                                    <PolarAngleAxis dataKey="name" tick={{ fontSize: 11, fontWeight: 800, fill: '#4B5563' }} />
+                                    <PolarRadiusAxis domain={[0, 6]} tick={false} axisLine={false} />
+                                    <Radar name="Score" dataKey="score" stroke="#4F46E5" fill="#4F46E5" fillOpacity={0.3} strokeWidth={4} dot={{ r: 5, fill: '#4F46E5', strokeWidth: 2, stroke: '#fff' }} />
+                                  </RadarChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+                            <div className="bg-gradient-to-br from-indigo-950 via-indigo-900 to-indigo-800 text-white p-12 rounded-[3.5rem] flex flex-col justify-center text-center space-y-8 shadow-2xl relative overflow-hidden group h-[520px]">
+                              <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-110 transition-transform duration-700"><TrendingUp size={200}/></div>
+                              <h3 className="text-indigo-300 text-[13px] font-black uppercase tracking-[0.3em] relative z-10">Mental Growth Index</h3>
+                              <div className="flex items-baseline justify-center gap-1 relative z-10">
+                                <span className="text-8xl md:text-9xl font-black tracking-tighter leading-none">{data.mgi.toFixed(1)}</span>
+                                <span className="text-2xl md:text-3xl font-bold text-indigo-400/60">/6</span>
+                              </div>
+                              <div className="space-y-5 pt-4 relative z-10">
+                                <div className="px-8 py-2.5 bg-white/10 rounded-full text-xs font-black inline-block backdrop-blur-xl border border-white/20 shadow-xl">{getStage(data.mgi).label} 성장 영역</div>
+                                <p className="text-[13px] text-indigo-100 leading-relaxed font-bold break-keep px-2 md:px-6">지금 실력보다 내일의 가능성을 보여주는 특별한 점수입니다! 🚀</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="space-y-8 pb-20">
+                            <h3 className="text-2xl font-black text-gray-900 flex items-center gap-3 px-2 tracking-tight"><Activity className="text-indigo-500" size={30}/> 상황별 상세 분석 데이터</h3>
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 md:gap-8">
+                              {data.extra.map(ex => <ScoreCard key={ex.id} title={ex.name} score={ex.score} />)}
+                            </div>
+                          </div>
+                        </motion.div>
+                      )}
+                      
+                      {activeTab === 'personal' && (
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="grid grid-cols-1 lg:grid-cols-2 gap-12 pb-32">
+                          <DetailCard dataId="1" itemData={{...data.pcdeq[0], icon: <Zap size={24}/>}} />
+                          <DetailCard dataId="mgi" itemData={{name: 'MGI 멘탈 성장지수', score: data.mgi, icon: <TrendingUp size={24}/>}} />
+                          {data.extra.map(ex => <DetailCard key={ex.id} dataId={ex.id} itemData={ex} />)}
+                        </motion.div>
+                      )}
+                      
+                      {activeTab === 'coach' && showCoachMode && (
+                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-12 pb-32">
+                          <div className="bg-amber-50 border border-amber-200 p-8 md:p-10 rounded-[3rem] flex flex-col md:flex-row items-start md:items-center gap-6 md:gap-8 text-amber-900 font-bold shadow-sm">
+                            <div className="p-5 bg-amber-100 rounded-[2rem] text-amber-600 shadow-inner shrink-0"><Lock size={32}/></div>
+                            <div>
+                              <p className="text-xl md:text-2xl font-black tracking-tight">전문가용 심층 코칭 리포트</p>
+                              <p className="text-xs md:text-sm text-amber-700 font-bold opacity-80 mt-1 uppercase tracking-wider">For Coaches & Mental Trainers Only</p>
+                              <p className="text-xs text-amber-600 font-medium mt-3 break-keep">이 탭은 지도자의 코칭 방향성 설정을 돕기 위한 데이터입니다. 선수나 학부모에게 직접 노출될 경우 부담을 줄 수 있으므로 활용에 주의해 주세요.</p>
+                            </div>
+                          </div>
+                          
+                          {data.pcdeq.map((s, i) => {
+                            const stageLabel = getStage(s.score).label;
+                            const coachData = COACH_CONTENT[s.id]?.[stageLabel] || { interpretation: "데이터 부족", behavior: "데이터 부족", guide: "평가 점수를 기반으로 개별 면담을 진행하세요." };
+                            
+                            return (
+                              <div key={s.id} className="bg-white rounded-[3rem] md:rounded-[4rem] shadow-sm overflow-hidden p-8 md:p-14 border border-gray-100 md:border-l-[20px] border-l-[12px] hover:shadow-xl transition-all duration-500" style={{ borderLeftColor: getStage(s.score).color }}>
+                                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 md:mb-12 gap-4">
+                                  <h3 className="font-black text-gray-900 text-2xl md:text-3xl tracking-tighter">{i+1}. {s.name}</h3>
+                                  <div className="flex items-baseline gap-1">
+                                    <span className="text-4xl md:text-5xl font-black" style={{color: getStage(s.score).color}}>{s.score.toFixed(2)}</span>
+                                    <span className="text-lg md:text-xl font-bold text-gray-200">/6.0</span>
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 md:gap-14 text-sm">
+                                  <div className="space-y-8 md:space-y-10">
+                                    <div className="bg-gray-50/80 p-8 md:p-10 rounded-[2rem] md:rounded-[2.5rem] border border-gray-100 shadow-inner">
+                                      <h4 className="font-black text-gray-900 mb-4 md:mb-5 flex items-center gap-3 text-base md:text-lg"><User size={20} className="text-indigo-500"/> 전문가 임상 해석</h4>
+                                      <p className="text-gray-600 leading-relaxed font-bold break-keep text-[14px] md:text-[15px]">{coachData.interpretation}</p>
+                                    </div>
+                                    <div className="bg-gray-50/80 p-8 md:p-10 rounded-[2rem] md:rounded-[2.5rem] border border-gray-100 shadow-inner">
+                                      <h4 className="font-black text-gray-900 mb-4 md:mb-5 flex items-center gap-3 text-base md:text-lg"><Activity size={20} className="text-indigo-500"/> 훈련 현장 관찰 포인트</h4>
+                                      <p className="text-gray-600 leading-relaxed font-bold break-keep text-[14px] md:text-[15px]">{coachData.behavior}</p>
+                                    </div>
+                                  </div>
+                                  <div className="bg-indigo-600 p-10 md:p-14 rounded-[2.5rem] md:rounded-[4rem] text-white shadow-2xl flex flex-col justify-center border-[6px] md:border-8 border-indigo-500 relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:rotate-12 transition-transform duration-1000"><Target size={200}/></div>
+                                    <h4 className="font-black text-indigo-100 mb-6 md:mb-8 text-xl md:text-2xl flex items-center gap-3 md:gap-5 relative z-10"><Target size={26} className="text-white"/> 지도 액션 플랜</h4>
+                                    <p className="text-base md:text-lg font-black leading-relaxed break-keep opacity-95 relative z-10">{coachData.guide}</p>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </motion.div>
+                      )}
+                    </main>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          );
+        }
+
+        // --- 렌더링 ---
+        const root = createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
